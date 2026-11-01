@@ -9,7 +9,7 @@ import streamlit as st
 from docx import Document
 from pypdf import PdfReader
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.8-flash"
 MAX_RESUME_CHARS = 20_000
 MAX_JD_CHARS = 8_000
 MAX_FILE_MB = 5
