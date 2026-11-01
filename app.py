@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import time
 
 import streamlit as st
 from docx import Document
@@ -13,6 +14,8 @@ DEFAULT_MODEL = "gemini-3.8-flash"
 MAX_RESUME_CHARS = 20_000
 MAX_JD_CHARS = 8_000
 MAX_FILE_MB = 5
+RETRY_CODES = {429, 500, 502, 503, 504}
+RETRY_DELAYS = (2, 5, 10, 20)  # seconds between attempts (5 tries total)
 
 # Weighted categories used to compute the overall score in code,
 # so the number is consistent with the sub-scores.
@@ -180,15 +183,26 @@ def analyze_resume(resume_text: str, job_description: str, api_key: str, model: 
     prompt += "\nAnalyze the resume and return the JSON."
 
     client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            temperature=0.2,
-            response_mime_type="application/json",
-        ),
+    config = types.GenerateContentConfig(
+        system_instruction=SYSTEM_PROMPT,
+        temperature=0.2,
+        response_mime_type="application/json",
     )
+
+    # Retry temporary errors (e.g. 503 "high demand") with increasing waits.
+    for attempt in range(len(RETRY_DELAYS) + 1):
+        try:
+            response = client.models.generate_content(model=model, contents=prompt, config=config)
+            break
+        except Exception as exc:
+            code = getattr(exc, "code", None)
+            if code not in RETRY_CODES or attempt == len(RETRY_DELAYS):
+                if code in RETRY_CODES:
+                    raise RuntimeError(
+                        "The Gemini model is busy right now. Please wait a minute and try again."
+                    ) from exc
+                raise
+            time.sleep(RETRY_DELAYS[attempt])
     return normalize_result(parse_json_response(response.text))
 
 
